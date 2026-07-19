@@ -18,6 +18,9 @@ coverage/
 .vite/
 playwright-report/
 test-results/
+*.tsbuildinfo
+pnpm-debug.log*
+logs/
 
 # Local environment and secrets
 .env

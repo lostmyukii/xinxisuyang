@@ -1,0 +1,29 @@
+{
+  "name": "xinxisuyang-competition-console",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.13.0",
+  "engines": {
+    "node": ">=24.0.0",
+    "pnpm": ">=11.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @xinxisuyang/server --filter @xinxisuyang/web dev",
+    "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
+    "lint": "eslint .",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
+    "test:e2e": "pnpm --filter @xinxisuyang/e2e test",
+    "build": "pnpm -r --workspace-concurrency=1 --if-present build",
+    "fixtures:large": "pnpm --filter @xinxisuyang/fixtures generate"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "@types/node": "^24.0.15",
+    "eslint": "^9.31.0",
+    "globals": "^16.3.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.38.0",
+    "vitest": "^3.2.4"
+  }
+}
