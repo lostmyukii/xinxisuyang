@@ -34,6 +34,7 @@ check_command node
 check_command pnpm
 check_command security
 check_command lsof
+check_command caffeinate
 
 if command -v node >/dev/null 2>&1; then
   node_version="$(node --version)"

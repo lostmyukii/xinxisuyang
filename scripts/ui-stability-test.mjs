@@ -1,9 +1,10 @@
 /* global document */
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { chromium } from "@playwright/test";
+import { summarizeMemory, summarizeSampling } from "./stability-metrics.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const durationMinutes = Number(process.env.UI_STABILITY_MINUTES ?? "240");
@@ -17,6 +18,7 @@ if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new Error("
 if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) throw new Error("UI_STABILITY_INTERVAL_SECONDS_INVALID");
 if (apiPort !== 4318) throw new Error("UI_STABILITY_API_PORT_MUST_BE_4318");
 if (!Number.isInteger(webPort) || webPort < 1024 || webPort > 65_535) throw new Error("UI_STABILITY_WEB_PORT_INVALID");
+if (process.env.UI_STABILITY_WAKE_LOCK !== "1") throw new Error("UI_STABILITY_WAKE_LOCK_REQUIRED");
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "xinxisuyang-ui-stability-"));
 const databasePath = join(temporaryDirectory, "ui-stability.sqlite");
@@ -30,6 +32,7 @@ const childProcesses = [];
 let browserContext;
 let runError;
 let transientRequestFailures = 0;
+const transientEvents = [];
 let lastObserved = null;
 
 const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
@@ -44,6 +47,14 @@ async function request(path, init) {
     } catch (error) {
       lastError = error;
       transientRequestFailures += 1;
+      if (transientEvents.length < 100) {
+        transientEvents.push({
+          at: new Date().toISOString(),
+          path,
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message.replace(apiBase, "LOCAL_API") : "UNKNOWN_REQUEST_ERROR",
+        });
+      }
       if (attempt < 2) await delay(100 * (attempt + 1));
     }
   }
@@ -99,7 +110,10 @@ async function stopChild(child) {
 async function saveReport(report) {
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  console.log((await readFile(reportPath, "utf8")).trim());
+  const summary = Object.fromEntries(
+    Object.entries(report).filter(([key]) => key !== "samples" && key !== "transientEvents"),
+  );
+  console.log(JSON.stringify(summary, null, 2));
   console.log(`UI 稳定性报告已保存：${reportPath}`);
 }
 
@@ -234,12 +248,31 @@ try {
     await delay(Math.min(intervalSeconds * 1000, Math.max(0, endAt - Date.now())));
   }
 
-  const serverMemory = samples.map((sample) => sample.serverRssMb);
-  const browserMemory = samples.map((sample) => sample.browserRssMb);
-  const serverMemoryGrowthMb = Math.max(...serverMemory) - Math.min(...serverMemory);
-  const browserMemoryGrowthMb = Math.max(...browserMemory) - Math.min(...browserMemory);
-  if (serverMemoryGrowthMb > 128) throw new Error(`UI_SERVER_MEMORY_GROWTH_${serverMemoryGrowthMb.toFixed(2)}MB`);
-  if (browserMemoryGrowthMb > 384) throw new Error(`UI_CHROME_MEMORY_GROWTH_${browserMemoryGrowthMb.toFixed(2)}MB`);
+  const sampling = summarizeSampling(samples, durationMinutes, intervalSeconds);
+  const serverMemory = summarizeMemory(
+    samples,
+    startedAt.toISOString(),
+    durationMinutes,
+    (sample) => sample.serverRssMb,
+  );
+  const browserMemory = summarizeMemory(
+    samples,
+    startedAt.toISOString(),
+    durationMinutes,
+    (sample) => sample.browserRssMb,
+  );
+  if (sampling.sampleCount < sampling.expectedMinimumSamples) {
+    throw new Error(`UI_SAMPLE_COVERAGE_${sampling.sampleCount}_OF_${sampling.expectedMinimumSamples}`);
+  }
+  if (sampling.maxGapSeconds > sampling.maxAllowedGapSeconds) {
+    throw new Error(`UI_SAMPLE_GAP_${sampling.maxGapSeconds.toFixed(2)}S`);
+  }
+  if (serverMemory.sustainedGrowthMb > 128 || serverMemory.peakWindowGrowthMb > 128) {
+    throw new Error(`UI_SERVER_MEMORY_SUSTAINED_GROWTH_${Math.max(serverMemory.sustainedGrowthMb, serverMemory.peakWindowGrowthMb).toFixed(2)}MB`);
+  }
+  if (browserMemory.sustainedGrowthMb > 384 || browserMemory.peakWindowGrowthMb > 384) {
+    throw new Error(`UI_CHROME_MEMORY_SUSTAINED_GROWTH_${Math.max(browserMemory.sustainedGrowthMb, browserMemory.peakWindowGrowthMb).toFixed(2)}MB`);
+  }
   if (transientRequestFailures > 3) throw new Error(`UI_TRANSIENT_FAILURES_${transientRequestFailures}`);
   await saveReport({
     result: "passed",
@@ -248,16 +281,26 @@ try {
     finishedAt: new Date().toISOString(),
     durationMinutes,
     intervalSeconds,
+    wakeLock: "caffeinate-ims",
     sampleCount: samples.length,
     snapshotCount: 1,
     rowCount: 501,
     transientRequestFailures,
-    serverMemoryGrowthMb: Number(serverMemoryGrowthMb.toFixed(2)),
-    browserMemoryGrowthMb: Number(browserMemoryGrowthMb.toFixed(2)),
+    sampling,
+    serverMemory,
+    browserMemory,
+    transientEvents,
     samples,
   });
 } catch (error) {
   runError = error instanceof Error ? error.message : "UNKNOWN_UI_STABILITY_ERROR";
+  const sampling = samples.length === 0 ? null : summarizeSampling(samples, durationMinutes, intervalSeconds);
+  const serverMemory = samples.length < 2
+    ? null
+    : summarizeMemory(samples, startedAt.toISOString(), durationMinutes, (sample) => sample.serverRssMb);
+  const browserMemory = samples.length < 2
+    ? null
+    : summarizeMemory(samples, startedAt.toISOString(), durationMinutes, (sample) => sample.browserRssMb);
   await saveReport({
     result: "failed",
     mode: "manual-only-ui",
@@ -265,9 +308,14 @@ try {
     finishedAt: new Date().toISOString(),
     durationMinutes,
     intervalSeconds,
+    wakeLock: "caffeinate-ims",
     transientRequestFailures,
     error: runError,
     lastObserved,
+    sampling,
+    serverMemory,
+    browserMemory,
+    transientEvents,
     samples,
   });
   throw error;

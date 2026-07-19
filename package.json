@@ -20,8 +20,8 @@
     "test:e2e": "pnpm --filter @xinxisuyang/e2e test:e2e",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
     "fixtures:large": "pnpm --filter @xinxisuyang/fixtures generate",
-    "test:stability": "node scripts/stability-test.mjs",
-    "test:stability:ui": "node scripts/ui-stability-test.mjs"
+    "test:stability": "STABILITY_WAKE_LOCK=1 /usr/bin/caffeinate -ims node scripts/stability-test.mjs",
+    "test:stability:ui": "UI_STABILITY_WAKE_LOCK=1 /usr/bin/caffeinate -ims node scripts/ui-stability-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",

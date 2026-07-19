@@ -1,7 +1,8 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { summarizeMemory, summarizeSampling } from "./stability-metrics.mjs";
 
 const projectRoot = resolve(import.meta.dirname, "..");
 const durationMinutes = Number(process.env.STABILITY_MINUTES ?? "240");
@@ -11,6 +12,7 @@ const reportPath = resolve(process.env.STABILITY_REPORT_PATH ?? join(projectRoot
 if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) throw new Error("STABILITY_MINUTES_INVALID");
 if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) throw new Error("STABILITY_INTERVAL_SECONDS_INVALID");
 if (!Number.isInteger(port) || port < 1024 || port > 65_535) throw new Error("STABILITY_PORT_INVALID");
+if (process.env.STABILITY_WAKE_LOCK !== "1") throw new Error("STABILITY_WAKE_LOCK_REQUIRED");
 
 const temporaryDirectory = await mkdtemp(join(tmpdir(), "xinxisuyang-stability-"));
 const databasePath = join(temporaryDirectory, "stability.sqlite");
@@ -18,6 +20,7 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const key = Buffer.alloc(32, 19).toString("base64");
 const startedAt = new Date();
 const samples = [];
+const transientEvents = [];
 let transientRequestFailures = 0;
 let child;
 let runError;
@@ -34,6 +37,14 @@ async function request(path, init) {
     } catch (error) {
       lastError = error;
       transientRequestFailures += 1;
+      if (transientEvents.length < 100) {
+        transientEvents.push({
+          at: new Date().toISOString(),
+          path,
+          attempt: attempt + 1,
+          error: error instanceof Error ? error.message.replace(baseUrl, "LOCAL_API") : "UNKNOWN_REQUEST_ERROR",
+        });
+      }
       if (attempt < 2) await delay(100 * (attempt + 1));
     }
   }
@@ -65,7 +76,10 @@ async function residentMemoryMb(pid) {
 async function saveReport(report) {
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  console.log((await readFile(reportPath, "utf8")).trim());
+  const summary = Object.fromEntries(
+    Object.entries(report).filter(([key]) => key !== "samples" && key !== "transientEvents"),
+  );
+  console.log(JSON.stringify(summary, null, 2));
   console.log(`稳定性报告已保存：${reportPath}`);
 }
 
@@ -83,7 +97,6 @@ try {
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
-
   await waitForHealth();
   await request("/api/event-rules", {
     method: "PUT",
@@ -139,9 +152,17 @@ try {
     await delay(Math.min(intervalSeconds * 1000, Math.max(0, endAt - Date.now())));
   }
 
-  const rssValues = samples.map((sample) => sample.rssMb);
-  const memoryGrowthMb = Math.max(...rssValues) - Math.min(...rssValues);
-  if (memoryGrowthMb > 128) throw new Error(`MEMORY_GROWTH_${memoryGrowthMb.toFixed(2)}MB`);
+  const sampling = summarizeSampling(samples, durationMinutes, intervalSeconds);
+  const memory = summarizeMemory(samples, startedAt.toISOString(), durationMinutes, (sample) => sample.rssMb);
+  if (sampling.sampleCount < sampling.expectedMinimumSamples) {
+    throw new Error(`SAMPLE_COVERAGE_${sampling.sampleCount}_OF_${sampling.expectedMinimumSamples}`);
+  }
+  if (sampling.maxGapSeconds > sampling.maxAllowedGapSeconds) {
+    throw new Error(`SAMPLE_GAP_${sampling.maxGapSeconds.toFixed(2)}S`);
+  }
+  if (memory.sustainedGrowthMb > 128 || memory.peakWindowGrowthMb > 128) {
+    throw new Error(`MEMORY_SUSTAINED_GROWTH_${Math.max(memory.sustainedGrowthMb, memory.peakWindowGrowthMb).toFixed(2)}MB`);
+  }
   if (transientRequestFailures > 3) throw new Error(`TRANSIENT_FAILURES_${transientRequestFailures}`);
   const report = {
     result: "passed",
@@ -150,16 +171,23 @@ try {
     finishedAt: new Date().toISOString(),
     durationMinutes,
     intervalSeconds,
+    wakeLock: "caffeinate-ims",
     sampleCount: samples.length,
     snapshotCount: 1,
     rowCount: 501,
     transientRequestFailures,
-    memoryGrowthMb: Number(memoryGrowthMb.toFixed(2)),
+    sampling,
+    memory,
+    transientEvents,
     samples,
   };
   await saveReport(report);
 } catch (error) {
   runError = error instanceof Error ? error.message : "UNKNOWN_STABILITY_ERROR";
+  const sampling = samples.length === 0 ? null : summarizeSampling(samples, durationMinutes, intervalSeconds);
+  const memory = samples.length < 2
+    ? null
+    : summarizeMemory(samples, startedAt.toISOString(), durationMinutes, (sample) => sample.rssMb);
   await saveReport({
     result: "failed",
     mode: "manual-only",
@@ -167,8 +195,12 @@ try {
     finishedAt: new Date().toISOString(),
     durationMinutes,
     intervalSeconds,
+    wakeLock: "caffeinate-ims",
     transientRequestFailures,
     error: runError,
+    sampling,
+    memory,
+    transientEvents,
     samples,
   });
   throw error;
