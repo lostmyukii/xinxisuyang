@@ -1,0 +1,27 @@
+.DS_Store
+.superpowers/
+
+# Local runtime data and sensitive artifacts
+data/
+exports/
+*.sqlite
+*.sqlite3
+*.sqlite-*
+*.db
+*.har
+*.xlsx
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+.vite/
+playwright-report/
+test-results/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
