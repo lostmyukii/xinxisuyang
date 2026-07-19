@@ -159,6 +159,7 @@ apps/extension  ->  apps/server  ->  packages/domain + packages/ranking
 - Frost：`#F5F7FA`
 - Ink：`#101114`
 - System Blue：`#0A84FF`
+- Action Blue：`#0066CC`（浅色背景的小字号链接、按钮和焦点）
 - System Green：`#30D158`
 - System Orange：`#FF9F0A`
 - System Red：`#FF453A`
@@ -183,6 +184,7 @@ apps/extension  ->  apps/server  ->  packages/domain + packages/ranking
 - 只在同步完成时使用一次短促、有意义的状态收束和差异高亮。
 - 支持 `prefers-reduced-motion`。
 - 保留清晰键盘焦点，达到 WCAG AA 对比度。
+- `#0A84FF` 保留作深色背景或大面积品牌强调；浅色背景上的交互文字不得牺牲 AA 对比度。
 - 错误文案说明问题和下一步，不使用模糊失败提示。
 - 16:9 大屏与 Mac 常用桌面分辨率是首要适配目标，同时保证窄屏单列可用。
 

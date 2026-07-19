@@ -1,4 +1,4 @@
-import { pageChannel, type ProbeReport } from "./messages.js";
+import { isTargetKdocsUrl, pageChannel, type ProbeReport } from "./messages.js";
 
 async function sha256(value: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -33,6 +33,7 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
   if (typeof event.data !== "object" || event.data === null) return;
   const request = event.data as { channel?: string; type?: string; nonce?: string };
   if (request.channel !== pageChannel || request.type !== "PROBE_REQUEST" || request.nonce === undefined) return;
+  if (!isTargetKdocsUrl(location.href)) return;
 
   void createStructureReport().then((payload) => {
     window.postMessage(

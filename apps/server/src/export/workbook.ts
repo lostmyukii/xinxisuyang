@@ -19,7 +19,7 @@ export interface WorkbookData {
   includeSensitive: boolean;
   sourceLabel: string;
   title: string;
-  splitBy?: (row: RankingRow) => string;
+  splitBy?: (row: RankingRow | RankingIssue) => string;
 }
 
 function styleHeader(worksheet: Worksheet, columnCount: number): void {
@@ -28,7 +28,7 @@ function styleHeader(worksheet: Worksheet, columnCount: number): void {
   for (let index = 1; index <= columnCount; index += 1) {
     const cell = row.getCell(index);
     cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A84FF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0066CC" } };
     cell.alignment = { vertical: "middle", horizontal: "center" };
   }
   worksheet.views = [{ state: "frozen", ySplit: 1 }];
@@ -90,12 +90,20 @@ function addMetadata(workbook: WorkbookType, data: WorkbookData, used: Set<strin
   worksheet.getColumn(1).font = { bold: true };
 }
 
-function addIssueSheet(workbook: WorkbookType, issues: readonly RankingIssue[], used: Set<string>): void {
+function addIssueSheet(
+  workbook: WorkbookType,
+  issues: readonly RankingIssue[],
+  sourceById: ReadonlyMap<string, SourceRecord>,
+  includeSensitive: boolean,
+  used: Set<string>,
+): void {
   if (issues.length === 0) return;
   const worksheet = workbook.addWorksheet(safeSheetName("异常记录", used));
-  worksheet.addRow(["来源序号", "赛区", "赛项", "组别", "选手姓名", "原始成绩", "异常原因"]);
+  const headers = ["来源序号", "赛区", "赛项", "组别", "选手姓名", "原始成绩", "异常原因"];
+  if (includeSensitive) headers.push("手机号", "身份证号");
+  worksheet.addRow(headers);
   for (const issue of issues) {
-    worksheet.addRow([
+    const values: Array<string | number> = [
       issue.sourceIndex + 1,
       issue.region,
       issue.event,
@@ -103,10 +111,17 @@ function addIssueSheet(workbook: WorkbookType, issues: readonly RankingIssue[], 
       issue.participantName,
       issue.scoreRaw,
       issueMessages[issue.code],
-    ]);
+    ];
+    if (includeSensitive) {
+      const source = sourceById.get(issue.sourceRecordId);
+      values.push(source?.phone ?? "", source?.idNumber ?? "");
+    }
+    worksheet.addRow(values);
   }
-  styleHeader(worksheet, 7);
-  worksheet.columns = [12, 16, 18, 14, 18, 14, 32].map((width) => ({ width }));
+  styleHeader(worksheet, headers.length);
+  worksheet.columns = headers.map((header) => ({
+    width: header === "异常原因" ? 32 : header === "身份证号" ? 24 : 16,
+  }));
 }
 
 export async function createWorkbook(data: WorkbookData): Promise<Buffer> {
@@ -122,11 +137,17 @@ export async function createWorkbook(data: WorkbookData): Promise<Buffer> {
     list.push(row);
     groups.set(name, list);
   }
+  if (data.splitBy !== undefined) {
+    for (const issue of data.issues) {
+      const name = data.splitBy(issue);
+      if (!groups.has(name)) groups.set(name, []);
+    }
+  }
   if (groups.size === 0) groups.set("成绩排名", []);
   for (const [name, rows] of groups) {
     addRankingSheet(workbook, name, rows, sourceById, data.includeSensitive, used);
   }
-  addIssueSheet(workbook, data.issues, used);
+  addIssueSheet(workbook, data.issues, sourceById, data.includeSensitive, used);
   addMetadata(workbook, data, used);
   const output = await workbook.xlsx.writeBuffer();
   return Buffer.from(output);

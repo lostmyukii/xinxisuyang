@@ -1,6 +1,6 @@
 .dashboard-grid { display: grid; grid-template-columns: minmax(310px, .88fr) minmax(280px, .72fr) minmax(260px, .65fr); gap: 18px; }
 .freshness-halo { position: relative; display: grid; min-height: 310px; place-items: center; overflow: hidden; border: 1px solid rgb(255 255 255 / 80%); border-radius: 32px; background: rgb(255 255 255 / 62%); box-shadow: var(--shadow-soft); }
-.halo-orbit { position: absolute; width: 236px; height: 236px; border-radius: 50%; background: rgb(48 209 88 / 23%); filter: blur(2px); animation: freshness-breathe 4.2s ease-in-out infinite; }
+.halo-orbit { position: absolute; width: 236px; height: 236px; border-radius: 50%; background: rgb(48 209 88 / 23%); filter: blur(2px); animation: freshness-settle 680ms ease-out 1 both; }
 .freshness-halo--stale .halo-orbit { background: rgb(255 159 10 / 25%); }
 .freshness-halo--critical .halo-orbit { background: rgb(255 69 58 / 24%); }
 .freshness-halo--empty .halo-orbit { background: rgb(16 17 20 / 8%); }
@@ -8,6 +8,11 @@
 .halo-core strong { margin-top: 14px; font-size: 24px; }
 .halo-core p { margin: 7px 0; color: var(--ink-muted); font-size: 11px; line-height: 1.5; }
 .halo-core > span:last-child { color: var(--ink-muted); font-size: 9px; }
+.halo-details { position: absolute; inset: auto 18px 14px; z-index: 2; color: var(--ink-muted); font-size: 10px; text-align: center; }
+.halo-details summary { color: var(--action-blue); cursor: pointer; font-weight: 700; }
+.halo-details > div { margin-top: 7px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 10px; background: rgb(255 255 255 / 94%); box-shadow: var(--shadow-soft); text-align: left; }
+.halo-details p { margin: 0; line-height: 1.45; }
+.halo-details p + p { margin-top: 4px; }
 .collection-boundary { display: flex; min-height: 310px; flex-direction: column; align-items: flex-start; justify-content: center; padding: 30px; border-radius: 28px; color: white; background: var(--ink); }
 .collection-boundary .status-badge { color: #ffd7a0; background: rgb(255 159 10 / 20%); }
 .collection-boundary h2 { margin: 20px 0 8px; font-size: 25px; }

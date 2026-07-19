@@ -15,7 +15,7 @@ main {
 
 .eyebrow {
   margin: 0 0 4px;
-  color: #0a84ff;
+  color: #0066cc;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -69,7 +69,7 @@ button {
 
 .primary {
   color: #fff;
-  background: #0a84ff;
+  background: #0066cc;
 }
 
 .secondary {
@@ -78,6 +78,6 @@ button {
 }
 
 :focus-visible {
-  outline: 3px solid rgb(10 132 255 / 35%);
+  outline: 3px solid rgb(0 102 204 / 70%);
   outline-offset: 2px;
 }

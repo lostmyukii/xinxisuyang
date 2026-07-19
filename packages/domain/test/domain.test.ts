@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   displayRankingRowSchema,
   eventRuleSchema,
+  freshnessSettingsSchema,
   getFreshness,
   maskParticipantName,
   toDisplayRankingRow,
@@ -59,5 +60,13 @@ describe("freshness", () => {
     expect(getFreshness("2026-07-19T05:59:00.000Z", now)).toBe("fresh");
     expect(getFreshness("2026-07-19T05:57:59.000Z", now)).toBe("stale");
     expect(getFreshness("2026-07-19T05:55:00.000Z", now)).toBe("critical");
+  });
+
+  it("accepts local thresholds only when critical is later than stale", () => {
+    const settings = { staleAfterSeconds: 180, criticalAfterSeconds: 600 };
+    expect(freshnessSettingsSchema.safeParse(settings).success).toBe(true);
+    expect(freshnessSettingsSchema.safeParse({ staleAfterSeconds: 600, criticalAfterSeconds: 180 }).success).toBe(false);
+    expect(getFreshness("2026-07-19T05:56:30.000Z", now, settings)).toBe("stale");
+    expect(getFreshness("2026-07-19T05:50:00.000Z", now, settings)).toBe("critical");
   });
 });

@@ -88,10 +88,43 @@ const migration001 = `
   );
 `;
 
+const migration002 = `
+  ALTER TABLE snapshots ADD COLUMN field_version TEXT NOT NULL DEFAULT 'canonical-v1';
+
+  CREATE INDEX IF NOT EXISTS sync_runs_finished_idx
+    ON sync_runs(state, finished_at DESC);
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    stale_after_seconds INTEGER NOT NULL,
+    critical_after_seconds INTEGER NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  INSERT OR IGNORE INTO app_settings(
+    id, stale_after_seconds, critical_after_seconds, updated_at
+  ) VALUES (1, 120, 300, CURRENT_TIMESTAMP);
+`;
+
 export function runMigrations(database: DatabaseSync): void {
   database.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
   database.exec(migration001);
   database
     .prepare("INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)")
     .run(1, new Date().toISOString());
+
+  const migration = database.prepare("SELECT 1 AS applied FROM schema_migrations WHERE version = ?");
+  if (migration.get(2) === undefined) {
+    database.exec("BEGIN IMMEDIATE");
+    try {
+      database.exec(migration002);
+      database
+        .prepare("INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)")
+        .run(2, new Date().toISOString());
+      database.exec("COMMIT");
+    } catch (error) {
+      database.exec("ROLLBACK");
+      throw error;
+    }
+  }
 }

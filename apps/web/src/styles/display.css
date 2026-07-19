@@ -17,7 +17,7 @@
 .display-table-head { padding: 0 24px 12px; color: rgb(255 255 255 / 38%); font-size: 11px; letter-spacing: .1em; }
 .display-table-head span:last-child { text-align: right; }
 .display-rows { border-top: 1px solid rgb(255 255 255 / 14%); }
-.display-row { min-height: clamp(58px, 6.2vh, 86px); padding: 0 24px; border-bottom: 1px solid rgb(255 255 255 / 9%); animation: settle-in .45s ease both; }
+.display-row { min-height: clamp(58px, 6.2vh, 86px); padding: 0 24px; border-bottom: 1px solid rgb(255 255 255 / 9%); }
 .display-rank { color: rgb(255 255 255 / 45%); font-size: clamp(21px, 2vw, 30px); }
 .display-row:nth-child(-n+3) .display-rank { color: var(--display-state); }
 .display-row strong { font-size: clamp(20px, 2.4vw, 34px); letter-spacing: .03em; }
@@ -26,6 +26,9 @@
 .display-footer label { display: flex; gap: 8px; align-items: center; color: rgb(255 255 255 / 66%); }
 .display-footer input { width: 16px; min-height: 16px; margin: 0; accent-color: var(--system-blue); }
 .display-footer select { width: auto; min-width: 280px; border-color: rgb(255 255 255 / 12%); color: rgb(255 255 255 / 75%); background: #11161e; }
+.display-pagination { display: flex; gap: 9px; align-items: center; }
+.display-pagination button { min-height: 30px; padding: 0 10px; border: 1px solid rgb(255 255 255 / 14%); border-radius: 9px; color: rgb(255 255 255 / 72%); background: rgb(255 255 255 / 6%); cursor: pointer; }
+.display-pagination button:disabled { cursor: not-allowed; opacity: .35; }
 .display-empty { display: grid; min-height: 100vh; place-items: center; align-content: center; gap: 15px; color: white; background: #080b10; text-align: center; }
 .display-empty .display-logo { width: 64px; height: 64px; border-radius: 20px; background: var(--system-blue); font-size: 24px; }
 .display-empty strong { font-size: 28px; }
@@ -37,4 +40,5 @@
   .display-table-head, .display-row { grid-template-columns: 60px 1fr 90px; padding-inline: 8px; }
   .display-footer { align-items: stretch; flex-direction: column; }
   .display-footer select { width: 100%; min-width: 0; }
+  .display-pagination { justify-content: space-between; }
 }

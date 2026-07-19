@@ -17,6 +17,7 @@ pnpm install
 pnpm typecheck
 pnpm lint
 pnpm test
+pnpm test:e2e
 pnpm build
 pnpm dev
 ```
@@ -28,6 +29,8 @@ pnpm check:environment
 pnpm package:local
 pnpm start:local
 ```
+
+正式验收还提供 `pnpm test:stability` 和 `pnpm test:stability:ui`，默认各运行 240 分钟；短时冒烟不能替代这两项正式稳定性测试。
 
 浏览器打开 `http://127.0.0.1:4173`。当前正式数据入口是手动粘贴、CSV 或 XLSX；Chrome 扩展只用于只读结构探测，不能视为自动同步已经启用。
 

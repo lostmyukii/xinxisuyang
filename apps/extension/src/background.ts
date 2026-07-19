@@ -1,4 +1,4 @@
-import type { ProbeReport } from "./messages.js";
+import { parseProbeReport, type ProbeReport } from "./messages.js";
 
 async function reportProbe(payload: ProbeReport): Promise<{ ok: boolean; code?: string }> {
   const settings = await chrome.storage.local.get("pairingToken");
@@ -31,7 +31,12 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   if (typeof message !== "object" || message === null) return false;
   const candidate = message as { type?: string; payload?: ProbeReport };
   if (candidate.type === "PROBE_METADATA" && candidate.payload !== undefined) {
-    void reportProbe(candidate.payload).then(sendResponse);
+    const payload = parseProbeReport(candidate.payload);
+    if (payload === null) {
+      sendResponse({ ok: false, code: "PROBE_PAYLOAD_INVALID" });
+      return false;
+    }
+    void reportProbe(payload).then(sendResponse);
     return true;
   }
   if (candidate.type === "GET_PROBE_STATUS") {

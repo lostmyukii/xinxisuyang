@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from "react";
 import { SegmentedControl } from "@xinxisuyang/ui";
-import { api } from "../../api/client.js";
+import { api, describeError } from "../../api/client.js";
 import { PageHeader } from "../../components/PageHeader.js";
 
 type ImportFormat = "clipboard" | "csv" | "xlsx";
-type MappingKey = "region" | "event" | "group" | "participantName" | "scoreRaw" | "phone" | "idNumber";
+type MappingKey = "region" | "event" | "group" | "participantName" | "scoreRaw" | "sourceRecordId" | "phone" | "idNumber";
 
 interface Preview {
+  headers: string[];
   hash: string;
   recordCount: number;
   validCount: number;
@@ -23,6 +24,7 @@ const initialMapping: Record<MappingKey, string> = {
   group: "组别",
   participantName: "选手姓名",
   scoreRaw: "成绩",
+  sourceRecordId: "",
   phone: "",
   idNumber: "",
 };
@@ -32,6 +34,7 @@ const labels: Record<MappingKey, string> = {
   group: "组别字段",
   participantName: "选手姓名字段",
   scoreRaw: "成绩字段",
+  sourceRecordId: "来源记录 ID 字段（可选）",
   phone: "手机号字段（可选）",
   idNumber: "身份证号字段（可选）",
 };
@@ -56,6 +59,7 @@ export function ImportPage() {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const fileReadVersion = useRef(0);
   const payload = useMemo(() => ({
     format,
     ...(format === "xlsx" ? { base64 } : { text }),
@@ -65,6 +69,7 @@ export function ImportPage() {
       group: mapping.group,
       participantName: mapping.participantName,
       scoreRaw: mapping.scoreRaw,
+      ...(mapping.sourceRecordId.trim().length === 0 ? {} : { sourceRecordId: mapping.sourceRecordId }),
       ...(mapping.phone.trim().length === 0 ? {} : { phone: mapping.phone }),
       ...(mapping.idNumber.trim().length === 0 ? {} : { idNumber: mapping.idNumber }),
     },
@@ -78,7 +83,7 @@ export function ImportPage() {
       setMessage("预览完成。确认数量、赛项配置和异常后再发布。");
     } catch (error) {
       setPreview(null);
-      setMessage(`预览失败：${error instanceof Error ? error.message : "UNKNOWN"}`);
+      setMessage(describeError(error, "预览失败，请检查源表内容和字段映射。"));
     }
   };
   const publish = async () => {
@@ -91,7 +96,7 @@ export function ImportPage() {
       });
       setMessage("快照已发布。排名、大屏和导出已切换到本次成功数据。");
     } catch (error) {
-      setMessage(`发布失败，上一成功快照未受影响：${error instanceof Error ? error.message : "UNKNOWN"}`);
+      setMessage(`发布失败，上一成功快照未受影响：${describeError(error, "请检查候选数据后重试。")}`);
     }
   };
 
@@ -111,8 +116,20 @@ export function ImportPage() {
               <input ref={fileInput} className="visually-hidden" type="file" accept=".xlsx" onChange={(change) => {
                 const file = change.target.files?.[0];
                 if (file === undefined) return;
+                const version = fileReadVersion.current + 1;
+                fileReadVersion.current = version;
                 setFileName(file.name);
-                void fileToBase64(file).then(setBase64);
+                setBase64("");
+                setPreview(null);
+                setMessage("正在读取 XLSX 文件…");
+                void fileToBase64(file).then((encoded) => {
+                  if (fileReadVersion.current !== version) return;
+                  setBase64(encoded);
+                  setMessage("XLSX 已在本机读取，可以生成预览。");
+                }).catch(() => {
+                  if (fileReadVersion.current !== version) return;
+                  setMessage("无法读取该 XLSX 文件，请重新选择。");
+                });
               }} />
               <span aria-hidden="true">↓</span><strong>{fileName || "选择 XLSX 文件"}</strong><p>文件仅发送到本机 127.0.0.1 服务解析</p>
               <button className="button button--quiet" type="button" onClick={() => fileInput.current?.click()}>选择文件</button>
@@ -133,6 +150,11 @@ export function ImportPage() {
           <div className="panel-heading"><div><p className="eyebrow">候选快照</p><h2>3. 核对后发布</h2></div><span className="data-type">{preview.hash.slice(0, 12)}</span></div>
           <div className="preview-counts"><div><span>读取记录</span><strong className="data-type">{preview.recordCount}</strong></div><div><span>有效成绩</span><strong className="data-type">{preview.validCount}</strong></div><div><span>异常记录</span><strong className="data-type">{preview.issueCount}</strong></div><div><span>排名分区</span><strong className="data-type">{preview.partitionCount}</strong></div></div>
           {preview.missingRuleEvents.length === 0 ? null : <div className="inline-alert inline-alert--orange">以下赛项尚未配置范围：{preview.missingRuleEvents.join("、")}</div>}
+          <div className="preview-evidence">
+            <div><h3>识别字段</h3><p>{preview.headers.join("、")}</p></div>
+            <div><h3>脱敏样例</h3>{preview.samples.length === 0 ? <p>没有可显示的记录。</p> : <div className="table-scroll"><table className="ranking-table"><thead><tr><th>赛区</th><th>赛项</th><th>组别</th><th>选手</th><th>原始成绩</th></tr></thead><tbody>{preview.samples.map((sample, index) => <tr key={`${sample.participantName}-${index}`}><td>{sample.region}</td><td>{sample.event}</td><td>{sample.group}</td><td>{sample.participantName}</td><td className="data-type">{sample.scoreRaw}</td></tr>)}</tbody></table></div>}</div>
+            {preview.issues.length === 0 ? null : <div><h3>首批异常</h3><ul>{preview.issues.slice(0, 10).map((issue) => <li key={`${issue.sourceIndex}-${issue.message}`}>来源行 {issue.sourceIndex + 2}：{issue.message}</li>)}</ul></div>}
+          </div>
           <div className="preview-actions"><p>预览样例中的姓名已经脱敏。发布时使用完整本地记录，但不会上传第三方。</p><button className="button button--primary" type="button" onClick={() => void publish()}>发布为当前快照</button></div>
         </section>
       )}

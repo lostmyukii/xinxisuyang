@@ -18,12 +18,12 @@ export function safeSheetName(value: string, used: Set<string>): string {
   const base = (replaceSheetCharacters(value).trim() || "未命名").slice(0, 31);
   let candidate = base;
   let suffix = 2;
-  while (used.has(candidate)) {
+  while (used.has(candidate.toLocaleLowerCase("zh-CN"))) {
     const suffixText = `_${suffix}`;
     candidate = `${base.slice(0, 31 - suffixText.length)}${suffixText}`;
     suffix += 1;
   }
-  used.add(candidate);
+  used.add(candidate.toLocaleLowerCase("zh-CN"));
   return candidate;
 }
 

@@ -18,24 +18,37 @@ const baseUrl = `http://127.0.0.1:${port}`;
 const key = Buffer.alloc(32, 19).toString("base64");
 const startedAt = new Date();
 const samples = [];
+let transientRequestFailures = 0;
 let child;
+let runError;
 
 const delay = (milliseconds) => new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
 
 async function request(path, init) {
-  const response = await fetch(`${baseUrl}${path}`, init);
-  if (!response.ok) throw new Error(`HTTP_${response.status}_${path}`);
-  return response.json();
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      if (!response.ok) throw new Error(`HTTP_${response.status}_${path}`);
+      return response.json();
+    } catch (error) {
+      lastError = error;
+      transientRequestFailures += 1;
+      if (attempt < 2) await delay(100 * (attempt + 1));
+    }
+  }
+  throw lastError;
 }
 
 async function waitForHealth() {
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
-      await request("/health");
-      return;
+      const response = await fetch(`${baseUrl}/health`);
+      if (response.ok) return;
     } catch {
-      await delay(500);
+      // The local process is still starting.
     }
+    await delay(500);
   }
   throw new Error("SERVER_HEALTH_TIMEOUT");
 }
@@ -47,6 +60,13 @@ async function residentMemoryMb(pid) {
   const exitCode = await new Promise((resolveExit) => command.once("close", resolveExit));
   if (exitCode !== 0) throw new Error("PROCESS_MEMORY_UNAVAILABLE");
   return Number(output.trim()) / 1024;
+}
+
+async function saveReport(report) {
+  await mkdir(dirname(reportPath), { recursive: true });
+  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  console.log((await readFile(reportPath, "utf8")).trim());
+  console.log(`稳定性报告已保存：${reportPath}`);
 }
 
 try {
@@ -122,6 +142,7 @@ try {
   const rssValues = samples.map((sample) => sample.rssMb);
   const memoryGrowthMb = Math.max(...rssValues) - Math.min(...rssValues);
   if (memoryGrowthMb > 128) throw new Error(`MEMORY_GROWTH_${memoryGrowthMb.toFixed(2)}MB`);
+  if (transientRequestFailures > 3) throw new Error(`TRANSIENT_FAILURES_${transientRequestFailures}`);
   const report = {
     result: "passed",
     mode: "manual-only",
@@ -132,14 +153,25 @@ try {
     sampleCount: samples.length,
     snapshotCount: 1,
     rowCount: 501,
+    transientRequestFailures,
     memoryGrowthMb: Number(memoryGrowthMb.toFixed(2)),
     samples,
   };
-  await mkdir(dirname(reportPath), { recursive: true });
-  await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
-  const savedReport = await readFile(reportPath, "utf8");
-  console.log(savedReport.trim());
-  console.log(`稳定性报告已保存：${reportPath}`);
+  await saveReport(report);
+} catch (error) {
+  runError = error instanceof Error ? error.message : "UNKNOWN_STABILITY_ERROR";
+  await saveReport({
+    result: "failed",
+    mode: "manual-only",
+    startedAt: startedAt.toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMinutes,
+    intervalSeconds,
+    transientRequestFailures,
+    error: runError,
+    samples,
+  });
+  throw error;
 } finally {
   if (child !== undefined && child.exitCode === null) {
     child.kill("SIGTERM");

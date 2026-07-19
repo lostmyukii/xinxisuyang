@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useMemo, useState } from "react";
-import { apiOrNull } from "../../api/client.js";
+import { apiOrNull, describeError } from "../../api/client.js";
 import type { RankingRow, SnapshotSummary } from "../../api/types.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { PageHeader } from "../../components/PageHeader.js";
@@ -12,13 +12,16 @@ export function RankingsPage() {
   const [event, setEvent] = useState("");
   const [group, setGroup] = useState("");
   const [search, setSearch] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
   const deferredSearch = useDeferredValue(search.trim().toLocaleLowerCase("zh-CN"));
 
   useEffect(() => {
-    void apiOrNull<{ snapshot: SnapshotSummary; rows: RankingRow[] }>("/api/rankings").then((value) => {
-      setRows(value?.rows ?? []);
-      setSnapshot(value?.snapshot ?? null);
-    });
+    void apiOrNull<{ snapshot: SnapshotSummary; rows: RankingRow[] }>("/api/rankings")
+      .then((value) => {
+        setRows(value?.rows ?? []);
+        setSnapshot(value?.snapshot ?? null);
+      })
+      .catch((error) => setMessage(describeError(error, "无法读取排名，请确认本机服务仍在运行。")));
   }, []);
 
   const options = useMemo(() => ({
@@ -48,6 +51,7 @@ export function RankingsPage() {
           <RankingTable rows={filtered} />
         </section>
       )}
+      {message === null ? null : <p className="form-message" role="status">{message}</p>}
     </>
   );
 }

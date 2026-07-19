@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { SegmentedControl } from "@xinxisuyang/ui";
-import { apiBase, apiOrNull } from "../../api/client.js";
-import type { RankingRow, SnapshotSummary } from "../../api/types.js";
+import { ApiError, apiBase, apiOrNull, describeError } from "../../api/client.js";
+import type { RankingIssue, RankingRow, SnapshotSummary } from "../../api/types.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { PageHeader } from "../../components/PageHeader.js";
 
@@ -13,7 +13,7 @@ function filenameFromDisposition(value: string | null): string {
 }
 
 export function ExportPage() {
-  const [rows, setRows] = useState<RankingRow[] | null>(null);
+  const [records, setRecords] = useState<Array<Pick<RankingRow, "region" | "event" | "group">> | null>(null);
   const [scope, setScope] = useState<Scope>("group");
   const [region, setRegion] = useState("");
   const [eventName, setEventName] = useState("");
@@ -21,12 +21,22 @@ export function ExportPage() {
   const [includeSensitive, setIncludeSensitive] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => { void apiOrNull<{ snapshot: SnapshotSummary; rows: RankingRow[] }>("/api/rankings").then((value) => setRows(value?.rows ?? [])); }, []);
+  useEffect(() => {
+    void Promise.all([
+      apiOrNull<{ snapshot: SnapshotSummary; rows: RankingRow[] }>("/api/rankings"),
+      apiOrNull<{ snapshot: SnapshotSummary; issues: RankingIssue[] }>("/api/issues"),
+    ])
+      .then(([rankingData, issueData]) => setRecords([
+        ...(rankingData?.rows ?? []),
+        ...(issueData?.issues ?? []),
+      ]))
+      .catch((error) => setMessage(describeError(error, "无法读取当前排名，请确认本机服务仍在运行。")));
+  }, []);
   const options = useMemo(() => ({
-    regions: Array.from(new Set((rows ?? []).map((row) => row.region))).sort(),
-    events: Array.from(new Set((rows ?? []).map((row) => row.event))).sort(),
-    groups: Array.from(new Set((rows ?? []).filter((row) => (region === "" || row.region === region) && (eventName === "" || row.event === eventName)).map((row) => row.group))).sort(),
-  }), [eventName, region, rows]);
+    regions: Array.from(new Set((records ?? []).map((record) => record.region))).sort(),
+    events: Array.from(new Set((records ?? []).map((record) => record.event))).sort(),
+    groups: Array.from(new Set((records ?? []).filter((record) => (region === "" || record.region === region) && (eventName === "" || record.event === eventName)).map((record) => record.group))).sort(),
+  }), [eventName, records, region]);
 
   const download = async () => {
     setMessage("正在生成可追溯导出文件…");
@@ -42,7 +52,10 @@ export function ExportPage() {
           ...(includeSensitive && confirmed ? { confirmation: "INCLUDE_SENSITIVE_FIELDS" } : {}),
         }),
       });
-      if (!response.ok) throw new Error(`HTTP_${response.status}`);
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null) as { error?: { code?: string } } | null;
+        throw new ApiError(payload?.error?.code ?? `HTTP_${response.status}`, response.status);
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -52,15 +65,15 @@ export function ExportPage() {
       URL.revokeObjectURL(url);
       setMessage("导出文件已生成，内容对应当前成功快照。");
     } catch (error) {
-      setMessage(`导出失败：${error instanceof Error ? error.message : "UNKNOWN"}`);
+      setMessage(describeError(error, "导出失败，请确认当前快照和导出范围后重试。"));
     }
   };
-  const disabled = rows === null || rows.length === 0 || (scope === "group" && (!region || !eventName || !group)) || (scope === "event" && !eventName) || (includeSensitive && !confirmed);
+  const disabled = records === null || records.length === 0 || (scope === "group" && (!region || !eventName || !group)) || (scope === "event" && !eventName) || (includeSensitive && !confirmed);
 
   return (
     <>
       <PageHeader eyebrow="文件可追溯" title="导出中心" description="按当前分组、当前赛项或全部赛项生成 Excel；敏感字段默认关闭。" />
-      {rows !== null && rows.length === 0 ? <EmptyState title="尚无可导出的排名" detail="完成一次成功导入后再生成文件。" /> : (
+      {records !== null && records.length === 0 ? <EmptyState title="尚无可导出的记录" detail="完成一次成功导入后再生成文件。" /> : (
         <section className="panel export-panel">
           <h2>选择导出范围</h2>
           <SegmentedControl<Scope> ariaLabel="导出范围" value={scope} onChange={setScope} segments={[{ label: "当前分组", value: "group" }, { label: "当前赛项", value: "event" }, { label: "全部赛项", value: "all" }]} />

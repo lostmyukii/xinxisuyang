@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import { StatusBadge } from "@xinxisuyang/ui";
-import { api, apiOrNull } from "../../api/client.js";
+import { api, apiOrNull, describeError } from "../../api/client.js";
 import type { RankingRow, SnapshotSummary, StatusResponse } from "../../api/types.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { PageHeader } from "../../components/PageHeader.js";
@@ -23,6 +23,11 @@ export function DashboardPage() {
     return { status, rankings };
   }, []);
   const { data, error, loading, refresh } = usePolling(load, 30_000);
+  const firstRow = data?.rankings?.rows[0];
+  const latestRows = firstRow === undefined ? [] : (data?.rankings?.rows ?? []).filter(
+    (row) => row.region === firstRow.region && row.event === firstRow.event && row.group === firstRow.group,
+  ).slice(0, 8);
+  const partitionLabel = firstRow === undefined ? "最近成功快照" : `${firstRow.region} · ${firstRow.event} · ${firstRow.group}`;
 
   return (
     <>
@@ -32,10 +37,10 @@ export function DashboardPage() {
         description="先确认数据是否可信，再处理异常，最后查看排名。"
         actions={<button className="button button--primary" type="button" onClick={() => void refresh()}>刷新本机数据</button>}
       />
-      {error === null ? null : <div className="inline-alert inline-alert--red">无法连接本机服务：{error}</div>}
+      {error === null ? null : <div className="inline-alert inline-alert--red">{describeError(error, "无法读取本机状态，请确认服务仍在运行。")}</div>}
       {loading || data === null ? <div className="loading-line">正在读取本机快照…</div> : (
         <div className="dashboard-grid">
-          <FreshnessHalo freshness={data.status.freshness} lastSuccessAt={data.status.lastSuccessAt} />
+          <FreshnessHalo freshness={data.status.freshness} lastSuccessAt={data.status.lastSuccessAt} lastErrorCode={data.status.lastErrorCode} settings={data.status.freshnessSettings} />
           <section className="collection-boundary">
             <StatusBadge tone="orange" icon="!">自动采集未验证</StatusBadge>
             <h2>当前使用手动导入</h2>
@@ -45,12 +50,12 @@ export function DashboardPage() {
           <SummaryStrip {...data.status.counts} />
           <section className="panel ranking-panel">
             <div className="panel-heading">
-              <div><p className="eyebrow">最近成功快照</p><h2>最新排名</h2></div>
+              <div><p className="eyebrow">{partitionLabel}</p><h2>最新排名</h2></div>
               <a href="/rankings">查看全部</a>
             </div>
             {data.rankings === null || data.rankings.rows.length === 0 ? (
               <EmptyState title="还没有可显示的排名" detail="配置赛项分数范围后，导入裁判表格数据即可生成排名。" action={{ href: "/rules", label: "配置赛项规则" }} />
-            ) : <RankingTable rows={data.rankings.rows.slice(0, 8)} compact />}
+            ) : <RankingTable rows={latestRows} compact />}
           </section>
           <section className="panel issue-callout">
             <div className="issue-count data-type">{data.status.counts.issues}</div>

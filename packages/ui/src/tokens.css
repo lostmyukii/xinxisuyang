@@ -4,6 +4,7 @@
   --ink: #101114;
   --ink-muted: #626974;
   --system-blue: #0a84ff;
+  --action-blue: #0066cc;
   --system-green: #30d158;
   --system-orange: #ff9f0a;
   --system-red: #ff453a;
@@ -12,5 +13,5 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 24px;
-  --focus-ring: 0 0 0 4px rgb(10 132 255 / 24%);
+  --focus-ring: 0 0 0 4px rgb(0 102 204 / 28%);
 }

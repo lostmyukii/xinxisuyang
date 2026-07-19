@@ -34,6 +34,7 @@ export function DisplayPage() {
   const load = useCallback(() => apiOrNull<DisplayData>("/api/display"), []);
   const { data, error } = usePolling(load, 30_000);
   const [selectedKey, setSelectedKey] = useState("");
+  const [pageIndex, setPageIndex] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
   const partitions = useMemo(() => {
     const values = new Map<string, { key: string; region: string; event: string; group: string }>();
@@ -45,18 +46,24 @@ export function DisplayPage() {
   }, [data]);
   const effectiveKey = partitions.some((partition) => partition.key === selectedKey) ? selectedKey : partitions[0]?.key ?? "";
   const rows = useMemo(() => (data?.rows ?? []).filter((row) => partitionKey(row) === effectiveKey), [data, effectiveKey]);
+  const pageCount = Math.max(1, Math.ceil(rows.length / 12));
+  const effectivePageIndex = Math.min(pageIndex, pageCount - 1);
+  const visibleRows = rows.slice(effectivePageIndex * 12, effectivePageIndex * 12 + 12);
   const active = partitions.find((partition) => partition.key === effectiveKey);
 
   useEffect(() => {
-    if (!autoRotate || partitions.length < 2) return undefined;
+    if (!autoRotate || (partitions.length < 2 && pageCount < 2)) return undefined;
     const timer = window.setInterval(() => {
-      setSelectedKey((current) => {
-        const index = Math.max(0, partitions.findIndex((partition) => partition.key === current));
-        return partitions[(index + 1) % partitions.length]?.key ?? "";
-      });
+      if (effectivePageIndex + 1 < pageCount) {
+        setPageIndex(effectivePageIndex + 1);
+        return;
+      }
+      const partitionIndex = Math.max(0, partitions.findIndex((partition) => partition.key === effectiveKey));
+      setSelectedKey(partitions[(partitionIndex + 1) % partitions.length]?.key ?? "");
+      setPageIndex(0);
     }, 10_000);
     return () => window.clearInterval(timer);
-  }, [autoRotate, partitions]);
+  }, [autoRotate, effectiveKey, effectivePageIndex, pageCount, partitions]);
 
   if (error !== null) return <div className="display-empty"><strong>无法连接本机成绩服务</strong><span>{error}</span></div>;
   if (data === null || data.rows.length === 0 || active === undefined) {
@@ -72,12 +79,13 @@ export function DisplayPage() {
       {data.freshness === "fresh" ? null : <div className="display-warning" role="status">当前保留最近一次成功排名，请联系成绩管理员检查数据连接。</div>}
       <section className="display-ranking" aria-label={`${active.region}${active.event}${active.group}排名`}>
         <div className="display-table-head"><span>名次</span><span>选手</span><span>成绩</span></div>
-        <div className="display-rows">{rows.slice(0, 12).map((row, index) => <div className="display-row" key={`${row.rank}-${row.participantName}-${index}`}><span className="display-rank data-type">{String(row.rank).padStart(2, "0")}</span><strong>{row.participantName}</strong><span className="display-score data-type">{row.score}</span></div>)}</div>
+        <div className="display-rows">{visibleRows.map((row, index) => <div className="display-row" key={`${row.rank}-${row.participantName}-${effectivePageIndex}-${index}`}><span className="display-rank data-type">{String(row.rank).padStart(2, "0")}</span><strong>{row.participantName}</strong><span className="display-score data-type">{row.score}</span></div>)}</div>
       </section>
       <footer className="display-footer">
         <label><input type="checkbox" checked={autoRotate} onChange={(change) => setAutoRotate(change.target.checked)} /> 自动轮播</label>
-        <select aria-label="切换排名分区" value={effectiveKey} onChange={(change) => setSelectedKey(change.target.value)}>{partitions.map((partition) => <option key={partition.key} value={partition.key}>{partition.region} · {partition.event} · {partition.group}</option>)}</select>
-        <span className="data-type">快照 {data.snapshotId.slice(0, 8)}</span>
+        <select aria-label="切换排名分区" value={effectiveKey} onChange={(change) => { setSelectedKey(change.target.value); setPageIndex(0); }}>{partitions.map((partition) => <option key={partition.key} value={partition.key}>{partition.region} · {partition.event} · {partition.group}</option>)}</select>
+        <div className="display-pagination"><button type="button" disabled={effectivePageIndex === 0} onClick={() => setPageIndex(Math.max(0, effectivePageIndex - 1))}>上一页</button><span className="data-type">第 {effectivePageIndex + 1}/{pageCount} 页</span><button type="button" disabled={effectivePageIndex + 1 >= pageCount} onClick={() => setPageIndex(Math.min(pageCount - 1, effectivePageIndex + 1))}>下一页</button></div>
+        <span className="display-snapshot-id data-type">快照 {data.snapshotId.slice(0, 8)}</span>
       </footer>
     </main>
   );

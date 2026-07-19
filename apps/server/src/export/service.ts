@@ -42,14 +42,15 @@ export async function exportCompetition(repository: CompetitionRepository, input
   const request = exportRequestSchema.parse(input);
   const current = repository.getCurrent();
   if (current === null) throw new Error("SNAPSHOT_NOT_FOUND");
-  const sourceRecords = repository.getCurrentSourceRecords();
+  const sourceRecords = repository.getCurrentSourceRecords(request.includeSensitive);
   const now = new Date();
   const time = timestampForFilename(now);
   const sourceLabel = current.summary.source === "manual" ? "手动导入" : current.summary.source;
   const sensitiveLabel = request.includeSensitive ? "_含敏感字段" : "";
 
   if (request.scope === "all") {
-    const events = Array.from(new Set(current.rows.map((row) => row.event))).sort((a, b) => a.localeCompare(b, "zh-CN"));
+    const events = Array.from(new Set(sourceRecords.map((record) => record.event).filter((event) => event.length > 0)))
+      .sort((a, b) => a.localeCompare(b, "zh-CN"));
     const zip = new JSZip();
     for (const event of events) {
       const rows = filterRows(current.rows, { event });
@@ -92,7 +93,7 @@ export async function exportCompetition(repository: CompetitionRepository, input
     includeSensitive: request.includeSensitive,
     sourceLabel,
     title,
-    ...(request.scope === "event" ? { splitBy: (row: RankingRow) => `${row.region}_${row.group}` } : {}),
+    ...(request.scope === "event" ? { splitBy: (row: RankingRow | RankingIssue) => `${row.region}_${row.group}` } : {}),
   });
   const scopeName = request.scope === "group"
     ? `${request.region}_${request.event}_${request.group}`

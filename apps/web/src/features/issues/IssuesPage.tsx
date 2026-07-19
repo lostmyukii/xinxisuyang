@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiOrNull } from "../../api/client.js";
+import { apiOrNull, describeError } from "../../api/client.js";
 import type { RankingIssue, SnapshotSummary } from "../../api/types.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { PageHeader } from "../../components/PageHeader.js";
@@ -7,11 +7,17 @@ import { PageHeader } from "../../components/PageHeader.js";
 export function IssuesPage() {
   const [issues, setIssues] = useState<RankingIssue[] | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotSummary | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   useEffect(() => {
-    void apiOrNull<{ snapshot: SnapshotSummary; issues: RankingIssue[] }>("/api/issues").then((value) => {
-      setIssues(value?.issues ?? []);
-      setSnapshot(value?.snapshot ?? null);
-    });
+    void apiOrNull<{ snapshot: SnapshotSummary; issues: RankingIssue[] }>("/api/issues")
+      .then((value) => {
+        setIssues(value?.issues ?? []);
+        setSnapshot(value?.snapshot ?? null);
+      })
+      .catch((error) => {
+        setIssues([]);
+        setMessage(describeError(error, "无法读取异常记录，请确认本机服务仍在运行。"));
+      });
   }, []);
   const grouped = useMemo(() => {
     const values = new Map<string, number>();
@@ -34,6 +40,7 @@ export function IssuesPage() {
           </section>
         </>
       )}
+      {message === null ? null : <p className="form-message" role="status">{message}</p>}
     </>
   );
 }

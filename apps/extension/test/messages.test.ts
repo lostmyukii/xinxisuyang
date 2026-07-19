@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPageProbeResponse, pageChannel } from "../src/messages.js";
+import { isPageProbeResponse, isTargetKdocsUrl, pageChannel, parseProbeReport } from "../src/messages.js";
 
 describe("page bridge message validation", () => {
   const payload = {
@@ -35,6 +35,18 @@ describe("page bridge message validation", () => {
         "expected",
       ),
     ).toBe(false);
-    expect(isPageProbeResponse({ ...payload, phone: "must-not-pass" }, "expected")).toBe(false);
+    expect(
+      isPageProbeResponse(
+        { channel: pageChannel, type: "PROBE_RESPONSE", nonce: "expected", payload: { ...payload, phone: "must-not-pass" } },
+        "expected",
+      ),
+    ).toBe(false);
+    expect(parseProbeReport({ ...payload, phone: "must-not-pass" })).toBeNull();
+  });
+
+  it("runs only for the confirmed KDocs share identifier", () => {
+    expect(isTargetKdocsUrl("https://www.kdocs.cn/wo/sl/v130lGtJ")).toBe(true);
+    expect(isTargetKdocsUrl("https://www.kdocs.cn/wo/sl/another-document")).toBe(false);
+    expect(isTargetKdocsUrl("https://example.com/wo/sl/v130lGtJ")).toBe(false);
   });
 });

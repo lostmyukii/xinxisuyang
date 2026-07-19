@@ -7,6 +7,7 @@ import { IssuesPage } from "../features/issues/IssuesPage.js";
 import { RankingsPage } from "../features/rankings/RankingsPage.js";
 import { RulesPage } from "../features/rules/RulesPage.js";
 import { SnapshotsPage } from "../features/snapshots/SnapshotsPage.js";
+import { SyncPage } from "../features/sync/SyncPage.js";
 
 const pages: Record<string, () => React.JSX.Element> = {
   "/": DashboardPage,
@@ -14,6 +15,7 @@ const pages: Record<string, () => React.JSX.Element> = {
   "/issues": IssuesPage,
   "/rules": RulesPage,
   "/import": ImportPage,
+  "/sync": SyncPage,
   "/snapshots": SnapshotsPage,
   "/exports": ExportPage,
 };

@@ -1,6 +1,7 @@
-import { isPageProbeResponse, pageChannel, type ProbeReport } from "./messages.js";
+import { isTargetKdocsUrl, pageChannel, parsePageProbeResponse, type ProbeReport } from "./messages.js";
 
 function injectBridge(): void {
+  if (!isTargetKdocsUrl(location.href)) return;
   if (document.documentElement.dataset.xinxisuyangProbeInjected === "true") return;
   document.documentElement.dataset.xinxisuyangProbeInjected = "true";
   const script = document.createElement("script");
@@ -11,6 +12,7 @@ function injectBridge(): void {
 }
 
 async function runProbe(): Promise<ProbeReport> {
+  if (!isTargetKdocsUrl(location.href)) throw new Error("TARGET_DOCUMENT_REQUIRED");
   injectBridge();
   const nonce = crypto.randomUUID();
   return new Promise((resolve, reject) => {
@@ -20,10 +22,11 @@ async function runProbe(): Promise<ProbeReport> {
     }, 15_000);
     const receive = (event: MessageEvent<unknown>) => {
       if (event.source !== window || event.origin !== location.origin) return;
-      if (!isPageProbeResponse(event.data, nonce)) return;
+      const response = parsePageProbeResponse(event.data, nonce);
+      if (response === null) return;
       window.clearTimeout(timeout);
       window.removeEventListener("message", receive);
-      resolve(event.data.payload);
+      resolve(response.payload);
     };
     window.addEventListener("message", receive);
     window.postMessage({ channel: pageChannel, type: "PROBE_REQUEST", nonce }, location.origin);
@@ -45,4 +48,4 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, sendResponse) =
   return true;
 });
 
-injectBridge();
+if (isTargetKdocsUrl(location.href)) injectBridge();

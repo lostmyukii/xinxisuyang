@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { z } from "zod";
 import {
   eventRuleSchema,
+  freshnessSettingsSchema,
   getFreshness,
   issueMessages,
   toDisplayRankingRow,
@@ -14,6 +15,7 @@ import { exportCompetition } from "./export/service.js";
 import { importRequestSchema, prepareImport } from "./import/request.js";
 import { probeReportSchema } from "./probe/schema.js";
 import { ProbeStore } from "./probe/store.js";
+import { compareSnapshots } from "./snapshots/compare.js";
 import { SyncStatusStore } from "./sync/status.js";
 
 export interface ServerDependencies {
@@ -42,8 +44,20 @@ export async function buildServer(dependencies: ServerDependencies) {
   );
   const status = new SyncStatusStore();
   const probe = new ProbeStore();
+  dependencies.repository.failInterruptedSyncRuns();
   const currentAtStart = dependencies.repository.getCurrent();
-  if (currentAtStart !== null) status.succeed(currentAtStart.summary);
+  const latestSuccessfulRun = dependencies.repository.getLatestSuccessfulSyncRun();
+  const latestRun = dependencies.repository.listSyncRuns(1)[0];
+  if (currentAtStart !== null) {
+    status.succeed(currentAtStart.summary, latestSuccessfulRun?.finishedAt ?? currentAtStart.summary.createdAt);
+  }
+  if (latestRun?.state === "failed") status.fail(latestRun.errorCode ?? "SYNC_FAILED");
+  let publicationTail: Promise<void> = Promise.resolve();
+  const serializePublication = <T>(work: () => T | Promise<T>): Promise<T> => {
+    const result = publicationTail.then(work, work);
+    publicationTail = result.then(() => undefined, () => undefined);
+    return result;
+  };
 
   await app.register(cors, {
     origin(origin, callback) {
@@ -60,9 +74,11 @@ export async function buildServer(dependencies: ServerDependencies) {
   app.get("/api/status", () => {
     const current = dependencies.repository.getCurrent();
     const state = status.get();
+    const freshnessSettings = dependencies.repository.getFreshnessSettings();
     return {
       ...state,
-      freshness: getFreshness(state.lastSuccessAt),
+      freshness: getFreshness(state.lastSuccessAt, new Date(), freshnessSettings),
+      freshnessSettings,
       counts:
         current === null
           ? { records: 0, valid: 0, issues: 0 }
@@ -76,25 +92,39 @@ export async function buildServer(dependencies: ServerDependencies) {
     };
   });
 
+  app.get("/api/settings/freshness", () => dependencies.repository.getFreshnessSettings());
+  app.put("/api/settings/freshness", (request) => {
+    const settings = freshnessSettingsSchema.parse(request.body);
+    return dependencies.repository.replaceFreshnessSettings(settings);
+  });
+
+  app.get("/api/sync-runs", (request) => {
+    const query = z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }).parse(request.query);
+    return { runs: dependencies.repository.listSyncRuns(query.limit) };
+  });
+
   app.get("/api/event-rules", () => ({ rules: dependencies.repository.listEventRules() }));
-  app.put("/api/event-rules", (request) => {
+  app.put("/api/event-rules", (request) => serializePublication(() => {
     const body = z.object({ rules: z.array(eventRuleSchema).max(500) }).parse(request.body);
-    const rules = dependencies.repository.replaceEventRules(body.rules);
     const current = dependencies.repository.getCurrent();
     const records = dependencies.repository.getCurrentSourceRecords();
     let snapshot = current?.summary ?? null;
+    let rules: typeof body.rules;
     if (current !== null && records.length > 0) {
-      const published = dependencies.repository.publish({
+      const replaced = dependencies.repository.replaceEventRulesAndPublish(body.rules, {
         records,
-        result: rankCompetition(records, rules),
+        result: rankCompetition(records, body.rules),
         source: current.summary.source,
       });
-      snapshot = published.snapshot;
-      status.succeed(published.snapshot);
+      rules = replaced.rules;
+      snapshot = replaced.published.snapshot;
+      status.setSnapshot(replaced.published.snapshot);
+    } else {
+      rules = dependencies.repository.replaceEventRules(body.rules);
+      dependencies.repository.recordAudit("event-rules.replaced", snapshot?.id ?? null, { ruleCount: rules.length });
     }
-    dependencies.repository.recordAudit("event-rules.replaced", snapshot?.id ?? null, { ruleCount: rules.length });
     return { rules, snapshot };
-  });
+  }));
 
   app.post("/api/probe/report", (request, reply) => {
     const expectedToken = dependencies.pairingToken;
@@ -135,22 +165,44 @@ export async function buildServer(dependencies: ServerDependencies) {
 
   app.post("/api/import/publish", async (request) => {
     const parsed = importRequestSchema.parse(request.body);
-    status.begin();
-    try {
-      const candidate = await prepareImport(parsed, dependencies.repository.listEventRules());
-      if (parsed.expectedHash === undefined) throw new Error("IMPORT_PREVIEW_REQUIRED");
-      if (candidate.hash !== parsed.expectedHash) throw new Error("IMPORT_CANDIDATE_CHANGED");
-      const published = dependencies.repository.publish({
-        records: candidate.records,
-        result: candidate.result,
-        source: "manual",
-      });
-      status.succeed(published.snapshot);
-      return { ...published, result: candidate.result };
-    } catch (error) {
-      status.fail(errorCode(error));
-      throw error;
-    }
+    return serializePublication(async () => {
+      const syncRun = dependencies.repository.startSyncRun("manual");
+      let recordCount: number | null = null;
+      status.begin();
+      try {
+        const rules = dependencies.repository.listEventRules();
+        const candidate = await prepareImport(parsed, rules);
+        recordCount = candidate.records.length;
+        if (parsed.expectedHash === undefined) throw new Error("IMPORT_PREVIEW_REQUIRED");
+        if (candidate.hash !== parsed.expectedHash) throw new Error("IMPORT_CANDIDATE_CHANGED");
+        const published = dependencies.repository.publish({
+          records: candidate.records,
+          result: candidate.result,
+          rules,
+          source: "manual",
+        });
+        const completed = dependencies.repository.finishSyncRun(syncRun.id, {
+          state: "succeeded",
+          recordCount,
+          errorCode: null,
+        });
+        status.succeed(published.snapshot, completed.finishedAt ?? published.snapshot.createdAt);
+        return { ...published, result: candidate.result, syncRun: completed };
+      } catch (error) {
+        const code = errorCode(error);
+        try {
+          dependencies.repository.finishSyncRun(syncRun.id, {
+            state: "failed",
+            recordCount,
+            errorCode: code,
+          });
+        } catch {
+          // Preserve the original publication error if recording the failed run also fails.
+        }
+        status.fail(code);
+        throw error;
+      }
+    });
   });
 
   app.get("/api/rankings", async (request, reply) => {
@@ -180,19 +232,40 @@ export async function buildServer(dependencies: ServerDependencies) {
   app.get("/api/display", async (_request, reply) => {
     const current = dependencies.repository.getCurrent();
     if (current === null) return reply.status(404).send({ error: { code: "SNAPSHOT_NOT_FOUND" } });
+    const currentStatus = status.get();
+    const lastSuccessAt = currentStatus.lastSuccessAt ?? current.summary.createdAt;
+    const freshnessSettings = dependencies.repository.getFreshnessSettings();
     return {
       snapshotId: current.summary.id,
-      lastSuccessAt: current.summary.createdAt,
-      freshness: getFreshness(current.summary.createdAt),
+      lastSuccessAt,
+      freshness: getFreshness(lastSuccessAt, new Date(), freshnessSettings),
       rows: current.rows.map(toDisplayRankingRow),
     };
   });
 
   app.get("/api/snapshots", () => ({ snapshots: dependencies.repository.listSnapshots() }));
+  app.get("/api/snapshots/compare", (request, reply) => {
+    const query = z.object({ base: z.string().uuid(), target: z.string().uuid() }).parse(request.query);
+    const base = dependencies.repository.getSnapshot(query.base);
+    const target = dependencies.repository.getSnapshot(query.target);
+    if (base === null || target === null) {
+      return reply.status(404).send({ error: { code: "SNAPSHOT_NOT_FOUND" } });
+    }
+    return compareSnapshots(base, target);
+  });
+  app.get("/api/snapshots/:id", (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).parse(request.params);
+    const snapshot = dependencies.repository.getSnapshot(params.id);
+    if (snapshot === null) return reply.status(404).send({ error: { code: "SNAPSHOT_NOT_FOUND" } });
+    return {
+      ...snapshot,
+      issues: snapshot.issues.map((issue) => ({ ...issue, message: issueMessages[issue.code] })),
+    };
+  });
   app.post("/api/snapshots/:id/restore", (request) => {
     const params = z.object({ id: z.string().uuid() }).parse(request.params);
     const restored = dependencies.repository.restoreSnapshot(params.id);
-    status.succeed(restored.summary);
+    status.setSnapshot(restored.summary);
     return restored;
   });
   app.post("/api/exports", async (request, reply) => {
