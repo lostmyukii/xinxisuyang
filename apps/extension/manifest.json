@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "信息素养大赛成绩只读探针",
+  "version": "0.1.0",
+  "description": "只读检查目标金山文档的结构，并把脱敏元数据发送到本机赛事指挥台。",
+  "permissions": ["activeTab", "storage"],
+  "host_permissions": [
+    "https://www.kdocs.cn/*",
+    "https://kdocs.cn/*",
+    "http://127.0.0.1:4318/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "成绩只读探针",
+    "default_popup": "popup/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.kdocs.cn/*", "https://kdocs.cn/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["page-bridge.js"],
+      "matches": ["https://www.kdocs.cn/*", "https://kdocs.cn/*"]
+    }
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  }
+}

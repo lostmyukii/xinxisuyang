@@ -1,0 +1,142 @@
+import { useMemo, useRef, useState } from "react";
+import { SegmentedControl } from "@xinxisuyang/ui";
+import { api } from "../../api/client.js";
+import { PageHeader } from "../../components/PageHeader.js";
+
+type ImportFormat = "clipboard" | "csv" | "xlsx";
+type MappingKey = "region" | "event" | "group" | "participantName" | "scoreRaw" | "phone" | "idNumber";
+
+interface Preview {
+  hash: string;
+  recordCount: number;
+  validCount: number;
+  issueCount: number;
+  partitionCount: number;
+  missingRuleEvents: string[];
+  samples: Array<Record<string, string>>;
+  issues: Array<{ sourceIndex: number; message: string }>;
+}
+
+const initialMapping: Record<MappingKey, string> = {
+  region: "赛区",
+  event: "赛项",
+  group: "组别",
+  participantName: "选手姓名",
+  scoreRaw: "成绩",
+  phone: "",
+  idNumber: "",
+};
+const labels: Record<MappingKey, string> = {
+  region: "赛区字段",
+  event: "赛项字段",
+  group: "组别字段",
+  participantName: "选手姓名字段",
+  scoreRaw: "成绩字段",
+  phone: "手机号字段（可选）",
+  idNumber: "身份证号字段（可选）",
+};
+
+async function fileToBase64(file: File): Promise<string> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  const chunk = 16_384;
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk));
+  }
+  return btoa(binary);
+}
+
+export function ImportPage() {
+  const [format, setFormat] = useState<ImportFormat>("clipboard");
+  const [text, setText] = useState("");
+  const [base64, setBase64] = useState("");
+  const [fileName, setFileName] = useState("");
+  const [mapping, setMapping] = useState(initialMapping);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const payload = useMemo(() => ({
+    format,
+    ...(format === "xlsx" ? { base64 } : { text }),
+    mapping: {
+      region: mapping.region,
+      event: mapping.event,
+      group: mapping.group,
+      participantName: mapping.participantName,
+      scoreRaw: mapping.scoreRaw,
+      ...(mapping.phone.trim().length === 0 ? {} : { phone: mapping.phone }),
+      ...(mapping.idNumber.trim().length === 0 ? {} : { idNumber: mapping.idNumber }),
+    },
+  }), [base64, format, mapping, text]);
+
+  const runPreview = async () => {
+    setMessage("正在校验候选数据…");
+    try {
+      const response = await api<Preview>("/api/import/preview", { method: "POST", body: JSON.stringify(payload) });
+      setPreview(response);
+      setMessage("预览完成。确认数量、赛项配置和异常后再发布。");
+    } catch (error) {
+      setPreview(null);
+      setMessage(`预览失败：${error instanceof Error ? error.message : "UNKNOWN"}`);
+    }
+  };
+  const publish = async () => {
+    if (preview === null) return;
+    setMessage("正在原子发布快照…");
+    try {
+      await api("/api/import/publish", {
+        method: "POST",
+        body: JSON.stringify({ ...payload, expectedHash: preview.hash }),
+      });
+      setMessage("快照已发布。排名、大屏和导出已切换到本次成功数据。");
+    } catch (error) {
+      setMessage(`发布失败，上一成功快照未受影响：${error instanceof Error ? error.message : "UNKNOWN"}`);
+    }
+  };
+
+  return (
+    <>
+      <PageHeader eyebrow="候选数据先预览" title="手动导入" description="支持表格复制、CSV 和 XLSX；确认字段映射后才会生成新快照。" />
+      <div className="import-layout">
+        <section className="panel import-source">
+          <h2>1. 选择数据来源</h2>
+          <SegmentedControl ariaLabel="导入格式" value={format} onChange={(value) => { setFormat(value); setPreview(null); }} segments={[
+            { label: "表格复制", value: "clipboard" },
+            { label: "CSV", value: "csv" },
+            { label: "XLSX", value: "xlsx" },
+          ]} />
+          {format === "xlsx" ? (
+            <div className="file-drop">
+              <input ref={fileInput} className="visually-hidden" type="file" accept=".xlsx" onChange={(change) => {
+                const file = change.target.files?.[0];
+                if (file === undefined) return;
+                setFileName(file.name);
+                void fileToBase64(file).then(setBase64);
+              }} />
+              <span aria-hidden="true">↓</span><strong>{fileName || "选择 XLSX 文件"}</strong><p>文件仅发送到本机 127.0.0.1 服务解析</p>
+              <button className="button button--quiet" type="button" onClick={() => fileInput.current?.click()}>选择文件</button>
+            </div>
+          ) : (
+            <label className="textarea-label">{format === "clipboard" ? "粘贴从金山表格复制的内容" : "粘贴 CSV 文本"}<textarea value={text} onChange={(change) => { setText(change.target.value); setPreview(null); }} placeholder={format === "clipboard" ? "赛区\t赛项\t组别\t选手姓名\t成绩" : "赛区,赛项,组别,选手姓名,成绩"} /></label>
+          )}
+        </section>
+        <section className="panel mapping-panel">
+          <h2>2. 确认字段映射</h2>
+          <p>字段名必须与源表完全一致，系统不会静默猜测相似字段。</p>
+          <div className="mapping-grid">{(Object.keys(labels) as MappingKey[]).map((key) => <label key={key}>{labels[key]}<input value={mapping[key]} onChange={(change) => { setMapping((current) => ({ ...current, [key]: change.target.value })); setPreview(null); }} /></label>)}</div>
+          <button className="button button--primary" type="button" onClick={() => void runPreview()} disabled={(format === "xlsx" ? base64 : text).length === 0}>生成导入预览</button>
+        </section>
+      </div>
+      {preview === null ? null : (
+        <section className="panel preview-panel">
+          <div className="panel-heading"><div><p className="eyebrow">候选快照</p><h2>3. 核对后发布</h2></div><span className="data-type">{preview.hash.slice(0, 12)}</span></div>
+          <div className="preview-counts"><div><span>读取记录</span><strong className="data-type">{preview.recordCount}</strong></div><div><span>有效成绩</span><strong className="data-type">{preview.validCount}</strong></div><div><span>异常记录</span><strong className="data-type">{preview.issueCount}</strong></div><div><span>排名分区</span><strong className="data-type">{preview.partitionCount}</strong></div></div>
+          {preview.missingRuleEvents.length === 0 ? null : <div className="inline-alert inline-alert--orange">以下赛项尚未配置范围：{preview.missingRuleEvents.join("、")}</div>}
+          <div className="preview-actions"><p>预览样例中的姓名已经脱敏。发布时使用完整本地记录，但不会上传第三方。</p><button className="button button--primary" type="button" onClick={() => void publish()}>发布为当前快照</button></div>
+        </section>
+      )}
+      {message === null ? null : <p className="form-message" role="status">{message}</p>}
+    </>
+  );
+}

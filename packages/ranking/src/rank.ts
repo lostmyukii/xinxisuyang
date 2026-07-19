@@ -30,10 +30,18 @@ function toIssue(record: SourceRecord, code: RankingIssue["code"]): RankingIssue
 
 export function rankCompetition(records: readonly SourceRecord[], rules: readonly EventRule[]): RankingResult {
   const rulesByEvent = new Map(rules.map((rule) => [rule.event.trim(), rule]));
+  const sourceIdCounts = new Map<string, number>();
+  for (const record of records) {
+    sourceIdCounts.set(record.sourceRecordId, (sourceIdCounts.get(record.sourceRecordId) ?? 0) + 1);
+  }
   const partitions = new Map<string, ValidCandidate[]>();
   const issues: RankingIssue[] = [];
 
   for (const record of records) {
+    if ((sourceIdCounts.get(record.sourceRecordId) ?? 0) > 1) {
+      issues.push(toIssue(record, "DUPLICATE_SOURCE_ID"));
+      continue;
+    }
     if (!isRecordIdentityComplete(record)) {
       issues.push(toIssue(record, "RECORD_INCOMPLETE"));
       continue;

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>成绩只读探针</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">只读连接</p>
+      <h1>成绩采集探针</h1>
+      <p class="notice">当前只验证页面结构，不读取或保存成绩内容。</p>
+      <label for="pairing-token">本机服务配对码</label>
+      <input id="pairing-token" type="password" autocomplete="off" spellcheck="false" />
+      <div class="actions">
+        <button id="save-token" type="button" class="secondary">保存配对码</button>
+        <button id="run-probe" type="button" class="primary">检查当前页面</button>
+      </div>
+      <p id="status" class="status" aria-live="polite">等待检查</p>
+    </main>
+    <script type="module" src="./popup.js"></script>
+  </body>
+</html>

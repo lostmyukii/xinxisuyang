@@ -1,0 +1,14 @@
+{
+  "name": "@xinxisuyang/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.54.1"
+  }
+}

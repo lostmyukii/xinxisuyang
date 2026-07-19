@@ -1,0 +1,83 @@
+:root {
+  color: #101114;
+  background: #f5f7fa;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+
+body {
+  width: 320px;
+  margin: 0;
+}
+
+main {
+  padding: 20px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: #0a84ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -0.03em;
+}
+
+.notice,
+.status {
+  color: #5a606b;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+label {
+  display: block;
+  margin: 18px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #d7dbe1;
+  border-radius: 10px;
+  background: #fff;
+  font: 13px "SFMono-Regular", Menlo, monospace;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primary {
+  color: #fff;
+  background: #0a84ff;
+}
+
+.secondary {
+  color: #101114;
+  background: #e6eaf0;
+}
+
+:focus-visible {
+  outline: 3px solid rgb(10 132 255 / 35%);
+  outline-offset: 2px;
+}

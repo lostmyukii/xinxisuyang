@@ -85,6 +85,18 @@ describe("rankCompetition", () => {
     expect(result.rows.map((row) => row.rank)).toEqual([1, 1, 1]);
   });
 
+  it("rejects every record that shares a duplicate source id", () => {
+    const result = rankCompetition(
+      [record(0, "95", { sourceRecordId: "duplicate" }), record(1, "94", { sourceRecordId: "duplicate" })],
+      rules,
+    );
+    expect(result.rows).toHaveLength(0);
+    expect(result.issues.map((issue) => issue.code)).toEqual([
+      "DUPLICATE_SOURCE_ID",
+      "DUPLICATE_SOURCE_ID",
+    ]);
+  });
+
   it("ranks 5,000 synthetic records deterministically", () => {
     const records = Array.from({ length: 5_000 }, (_, index) =>
       record(index, `${60 + (index % 60)}.${String(index % 100).padStart(2, "0")}`, {

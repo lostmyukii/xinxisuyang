@@ -21,4 +21,14 @@ pnpm build
 pnpm dev
 ```
 
-详细业务与安全规则见 [开发文档.md](./开发文档.md)，执行顺序见 [实施计划.md](./实施计划.md)。
+## 比赛电脑运行
+
+```bash
+pnpm check:environment
+pnpm package:local
+pnpm start:local
+```
+
+浏览器打开 `http://127.0.0.1:4173`。当前正式数据入口是手动粘贴、CSV 或 XLSX；Chrome 扩展只用于只读结构探测，不能视为自动同步已经启用。
+
+详细业务与安全规则见 [开发文档.md](./开发文档.md)，执行顺序见 [实施计划.md](./实施计划.md)，现场操作见 [docs/安装与现场运行.md](./docs/安装与现场运行.md)。

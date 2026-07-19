@@ -9,13 +9,18 @@
     "pnpm": ">=11.0.0"
   },
   "scripts": {
+    "check:environment": "bash scripts/check-environment.sh",
     "dev": "pnpm --parallel --filter @xinxisuyang/server --filter @xinxisuyang/web dev",
+    "dev:local": "bash scripts/dev-start.sh",
+    "start:local": "bash scripts/start-local.sh",
+    "package:local": "bash scripts/package-local.sh",
     "typecheck": "pnpm -r --workspace-concurrency=1 --if-present typecheck",
     "lint": "eslint .",
     "test": "pnpm -r --workspace-concurrency=1 --if-present test",
-    "test:e2e": "pnpm --filter @xinxisuyang/e2e test",
+    "test:e2e": "pnpm --filter @xinxisuyang/e2e test:e2e",
     "build": "pnpm -r --workspace-concurrency=1 --if-present build",
-    "fixtures:large": "pnpm --filter @xinxisuyang/fixtures generate"
+    "fixtures:large": "pnpm --filter @xinxisuyang/fixtures generate",
+    "test:stability": "node scripts/stability-test.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",

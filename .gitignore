@@ -2,8 +2,8 @@
 .superpowers/
 
 # Local runtime data and sensitive artifacts
-data/
-exports/
+/data/
+/exports/
 *.sqlite
 *.sqlite3
 *.sqlite-*
@@ -20,7 +20,7 @@ playwright-report/
 test-results/
 *.tsbuildinfo
 pnpm-debug.log*
-logs/
+/logs/
 
 # Local environment and secrets
 .env
